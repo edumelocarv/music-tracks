@@ -46,8 +46,10 @@ def test_frontend_needs_build(tmp_path):
     (tmp_path / "dist").mkdir()
     index = tmp_path / "dist" / "index.html"
     index.write_text("<html>")
+    # Explicit timestamps: on Windows two files written back to back can share an mtime.
     old = time.time() - 100
     os.utime(src, (old, old))
+    os.utime(index, (old + 50, old + 50))
     assert not launcher.frontend_needs_build(tmp_path)
     (tmp_path / "package.json").write_text("{}")  # newer than dist
     assert launcher.frontend_needs_build(tmp_path)
