@@ -83,7 +83,7 @@ if ((!ok)); then
   cleanup
   exit 1
 fi
-open "http://127.0.0.1:$PORT" 2>/dev/null || true
+[[ -n "${MUSIC_TRACKS_NO_BROWSER:-}" ]] || open "http://127.0.0.1:$PORT" 2>/dev/null || true
 echo "==> Pronto / ready: http://127.0.0.1:$PORT  (Ctrl+C para sair)"
 
 restarts=()
