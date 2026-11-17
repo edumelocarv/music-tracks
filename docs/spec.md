@@ -184,7 +184,7 @@ Cada job trabalha em `DATA_DIR/tmp/jobs/<job_id>/` e só no fim faz a troca, nes
 
 | # | Etapa | O que faz | Progresso |
 |---|---|---|---|
-| 1 | `download` (só se `source_type=url` e `original.*` ainda não existe) | yt-dlp baixa apenas o áudio (`format=bestaudio/best`, `noplaylist=True`, `max_filesize` 500 MB → `FILE_TOO_LARGE`) em `tmp/jobs/<job_id>/` e move para `original.<ext>` ao concluir; extrai título, artista (`artist` → `creator` → `uploader`), álbum, thumbnail (convertida para `cover.jpg` 600×600 máx.). | % do yt-dlp |
+| 1 | `download` (só se `source_type=url` e `original.*` ainda não existe) | yt-dlp baixa apenas o áudio (`format=bestaudio/best`, `noplaylist=True`, `max_filesize` 500 MB; como o yt-dlp apenas pula o download nesse caso, arquivo final ausente ou `filesize`/`filesize_approx` > 500 MB → `FILE_TOO_LARGE`) em `tmp/jobs/<job_id>/` e move para `original.<ext>` ao concluir; extrai título, artista (`artist` → `creator` → `uploader`), álbum, thumbnail (convertida para `cover.jpg` 600×600 máx.). | % do yt-dlp |
 | 2 | `prepare` | `ffprobe` valida (§8.1); `ffmpeg` converte para `source.wav` (44,1 kHz, estéreo — mono é duplicado — float32). Lê tags com `mutagen` (título, artista, álbum, capa embutida) **somente no primeiro job da música** (`duration_s` ainda nulo) e só para origem `file`/`watch`; reprocessamentos e retries nunca alteram metadados nem capa. Grava `duration_s`. | 0 → 100 |
 | 3 | `separate` | §7.3 | % de chunks |
 | 4 | `analyze` | §7.4. **Falha aqui não falha o job:** grava `analysis_status=failed` e segue. | 33/66/100 (batidas/tom/acordes) |
@@ -262,7 +262,7 @@ Para cada stem: mono (média dos canais), blocos de 512 amostras, `min` e `max` 
 
 - **Upload** (`POST /api/songs/upload`, multipart, campos `file`, `stem_mode`): grava em `tmp/api/`, calcula hash em streaming, valida, cria `songs/<id>/`, move o arquivo para `original.<ext>` e só então insere música (`pending`) + job numa única transação; se a transação falhar (ex.: `IntegrityError` → `DUPLICATE`), apaga `songs/<id>/`. Múltiplos arquivos = múltiplas requisições sequenciais pela UI, cada uma com seu próprio resultado.
 - **URL** (`POST /api/songs/url`, `{url, stem_mode}`): aceita apenas `http(s)`. A API faz `extract_info(download=False)` numa thread com timeout de 30 s (`socket_timeout=15`): falha → `INVALID_URL` (422); playlist (`_type == "playlist"` sem vídeo único) → `PLAYLIST_NOT_SUPPORTED` (422); `is_live` verdadeiro → `INVALID_URL`; duração conhecida > 15 min → `TOO_LONG` (desconhecida: validada no `prepare`). Sucesso → cria música (título provisório do vídeo) + job. Erro no download dentro do job → `DOWNLOAD_FAILED`.
-- **Pasta monitorada** (`DATA_DIR/inbox/`): o worker varre a cada 5 s (não recursivo; ignora arquivos ocultos e `_ignorados/`; extensões não aceitas vão para `_ignorados/` com `.erro.txt` `UNSUPPORTED_FORMAT`; nomes repetidos ali ganham sufixo ` (2)`, ` (3)`…). Um arquivo só é importado quando o tamanho e o `mtime` ficam iguais em duas varreduras seguidas (arquivo terminou de ser copiado). Importação: move para `songs/<id>/original.<ext>`, cria música (`source_type=watch`, modo = padrão das configurações) + job. Em caso de rejeição (duplicado, grande demais), move para `_ignorados/` e grava `<nome>.erro.txt` com o código. A varredura roda inclusive enquanto um job está em execução (thread separada no worker).
+- **Pasta monitorada** (`DATA_DIR/inbox/`): o worker varre a cada 5 s (não recursivo; ignora arquivos ocultos e `_ignorados/`; extensões não aceitas vão para `_ignorados/` com `.erro.txt` `UNSUPPORTED_FORMAT`; nomes repetidos ali ganham sufixo ` (2)`, ` (3)`…). Um arquivo só é importado quando o tamanho e o `mtime` ficam iguais em duas varreduras seguidas (arquivo terminou de ser copiado). Importação: move para `songs/<id>/original.<ext>`, cria música (`source_type=watch`, modo = padrão das configurações) + job. A pasta `songs/<id>/` é sempre criada por quem cria a música (API ou varredura da pasta), nunca pelo processamento. Em caso de rejeição (duplicado, grande demais), move para `_ignorados/` e grava `<nome>.erro.txt` com o código. A varredura roda inclusive enquanto um job está em execução (thread separada no worker).
 
 **Códigos de erro** (resposta `{"error": {"code": "...", "detail": "...", ...}}`): `UNSUPPORTED_FORMAT`, `FILE_TOO_LARGE`, `INVALID_AUDIO`, `TOO_LONG`, `TOO_SHORT`, `DUPLICATE`, `INVALID_URL`, `PLAYLIST_NOT_SUPPORTED`, `DOWNLOAD_FAILED`, `SEPARATION_FAILED`, `OUT_OF_MEMORY`, `DISK_FULL`, `JOB_ALREADY_ACTIVE`, `NOT_FOUND`, `VALIDATION_ERROR`, `SONG_NOT_READY`, `INVALID_STATE`, `FORBIDDEN`, `INTERNAL_ERROR`. Status HTTP: `FORBIDDEN` → 403 (§12); `UNSUPPORTED_FORMAT`, `TOO_LONG`, `TOO_SHORT`, `INVALID_URL`, `PLAYLIST_NOT_SUPPORTED`, `VALIDATION_ERROR` → 422; `FILE_TOO_LARGE` → 413; `DUPLICATE`, `JOB_ALREADY_ACTIVE`, `SONG_NOT_READY`, `INVALID_STATE` → 409; `NOT_FOUND` → 404; `INTERNAL_ERROR` → 500. `INVALID_AUDIO`, `DOWNLOAD_FAILED`, `SEPARATION_FAILED`, `OUT_OF_MEMORY` e `DISK_FULL` só ocorrem dentro de jobs (`jobs.error_code`). Dentro de jobs: `OSError` com `ENOSPC` em qualquer etapa → `DISK_FULL`; falha do `ffmpeg` na conversão do `prepare` → `INVALID_AUDIO`; qualquer outra exceção não prevista → `INTERNAL_ERROR`, com `error_detail = "<tipo>: <mensagem>"` e stack trace em `worker.log`. Em corrida que viole o `UNIQUE` de `source_key`, o `IntegrityError` é tratado como `DUPLICATE`. Antes de iniciar um job, o worker exige 2 GB livres em `DATA_DIR`; senão → `DISK_FULL`.
 
@@ -290,7 +290,7 @@ Tudo no navegador, com `signalsmith-stretch@1.3.2`:
 | Master | 0–100%. |
 | Velocidade | 50–150%, passo 5% (botões) e 1% (campo numérico). Tom inalterado. |
 | Transposição | −12 a +12 semitons, passo 1. Velocidade inalterada. |
-| Loop A-B | Teclas `[` e `]` definem A e B na posição atual, ou arrastando na régua. Requer B − A ≥ 0,5 s (senão a tecla é ignorada); definir A depois de B (ou B antes de A) limpa a outra ponta. `L` liga/desliga. Ao ligar com o playhead fora do trecho, salta para A. |
+| Loop A-B | Teclas `[` e `]` definem A e B na posição atual, ou arrastando na régua. `L` liga/desliga (sem as duas pontas, não faz nada). Ao ligar com o playhead fora do trecho, salta para A. Com o loop ligado, um seek para fora de [A, B] desliga o loop. Se a nova ponta inverte a ordem, a outra ponta é limpa e a nova aceita; só com ordem válida e B − A < 0,5 s a tecla é ignorada. Com uma só ponta, `player_state.loop` é salvo como `null`. |
 | Marcadores | `M` cria marcador na posição atual (nome padrão "Marcador n"/"Marker n"); clique pula para ele; renomear/apagar. Loops podem ser salvos com nome e reativados. |
 | Metrônomo | Liga/desliga (`K`), volume, acento no downbeat, offset −100 a +100 ms. Desabilitado se a análise falhou ou não tem batidas. |
 
@@ -324,13 +324,13 @@ Todas síncronas na API (a UI mostra "Gerando…" e baixa o arquivo); exigem `st
 | ZIP de stems | `GET /api/songs/{id}/export/zip?format=...` | `stems` |
 | Mix customizado | `POST /api/songs/{id}/export/mix` | `mix` |
 
-Formatos: `wav` (PCM 24 bits), `flac` (24 bits), `mp3` (320 kbps CBR, via ffmpeg/libmp3lame); todos 44,1 kHz estéreo.
+Formatos (padrão `wav` quando omitido): `wav` (PCM 24 bits), `flac` (24 bits), `mp3` (320 kbps CBR, via ffmpeg/libmp3lame); todos 44,1 kHz estéreo.
 
 Mix: corpo `{"gains": {stem: 0.0–1.0}, "speed": 0.5–1.5, "semitones": -12..12, "start_s": null|n, "end_s": null|n, "format": "..."}`. A UI preenche `gains` com os ganhos efetivos atuais (mute/solo já resolvidos, multiplicados pelo master) e oferece as opções "aplicar velocidade e tom" (padrão desligado → envia 1.0/0) e "somente o trecho A-B" (se houver loop). O servidor recorta, soma com os ganhos, aplica `python-stretch` se `speed≠1` ou `semitones≠0` e, se o pico passar de 1,0, normaliza para pico 0,98. `start_s` nulo = 0, `end_s` nulo = `duration_s`; exige `0 ≤ start_s < end_s ≤ duration_s` e `end_s − start_s ≥ 0,5`. Stem em `gains` fora do modo atual, ou `speed`/`semitones` fora da faixa → `VALIDATION_ERROR`; stems omitidos têm ganho 0. Todos os ganhos zero → `VALIDATION_ERROR`.
 
 ## 11. API
 
-Prefixo `/api`; JSON; erros no formato e com os status do §8.3.
+Prefixo `/api`; JSON; erros no formato e com os status do §8.3. Os formatos exatos das respostas (objetos `Song`, `Job`, `Marker`, `Settings`, `Health` e envelopes) estão em [`api-contract.md`](api-contract.md), que faz parte desta spec.
 
 | Método e rota | Descrição |
 |---|---|
@@ -339,7 +339,7 @@ Prefixo `/api`; JSON; erros no formato e com os status do §8.3.
 | `POST /songs/upload`, `POST /songs/url` | §8.3. Resposta 201 com a música e o job. |
 | `GET /songs/{id}` | Música + tags + job ativo/último + `stems` (lista na ordem do modo). |
 | `PATCH /songs/{id}` | Campos editáveis: `title` (1–200), `artist`, `album` (0–200; vazio → null), `favorite`, `notes`, `tags` (lista completa, substitui), `player_state`. |
-| `DELETE /songs/{id}` | Pede cancelamento do job ativo e aguarda até 10 s; em seguida apaga linhas e pasta de qualquer forma (o worker descarta resultados de músicas que não existem mais). 204. |
+| `DELETE /songs/{id}` | Pede cancelamento do job ativo e aguarda até 10 s; em seguida apaga linhas e pasta de qualquer forma. 204. O worker trata o sumiço como cancelamento: um `UPDATE jobs` de progresso que afeta 0 linhas levanta a exceção de cancelamento; antes de escrever em `songs/<id>/` (download, troca) confirma que a música existe; nunca cria `songs/<id>/`; se a música sumiu, apaga a pasta de trabalho e encerra sem gravar nada. |
 | `PUT /songs/{id}/cover` (multipart, jpg/png ≤ 10 MB; outro formato → `UNSUPPORTED_FORMAT`, maior → `FILE_TOO_LARGE`) / `GET /songs/{id}/cover` / `DELETE /songs/{id}/cover` | Capa redimensionada para no máximo 600×600 JPEG. |
 | `POST /songs/{id}/reprocess` `{stem_mode}` | Cria job; 409 se já houver job ativo. |
 | `GET /songs/{id}/stems/{stem}.flac` | Arquivo do stem (`Cache-Control: no-cache` + ETag). |
@@ -383,7 +383,7 @@ Backend (`pytest`). Fora de `@pytest.mark.slow`, o separador é um *fake* (gera 
 19. `prepare`: arquivo de 3 s → `TOO_SHORT`; 15 min 1 s → `TOO_LONG`; `.mp3` corrompido → `INVALID_AUDIO`; em todos, job e música `failed`.
 20. Pasta monitorada: hash igual ao de música existente → `_ignorados/` com `.erro.txt` contendo `DUPLICATE`.
 21. Reprocessar do modo 4 para o 6 (fake) → `stem_mode=6`, `GET /songs/{id}` lista os 6 stems na ordem do glossário, `stems/` só com os 6 FLACs.
-22. Metadados: upload de MP3 com tags ID3 e capa embutida → título, artista, álbum e capa das tags; `PATCH title` + reprocess → título preservado; `DELETE cover` + retry → sem capa; reprocess nunca altera `artist`/`album`.
+22. Metadados: upload de MP3 com tags ID3 e capa embutida → título, artista, álbum e capa das tags; `PATCH title` + reprocess → título preservado; `DELETE cover` + reprocess → sem capa; job que falha depois do `prepare` + `DELETE cover` + retry → sem capa; reprocess nunca altera `artist`/`album`.
 23. Download (yt-dlp mockado gerando áudio): `step_count=5`, `original.<ext>` criado, artista por `artist`→`creator`→`uploader`, thumbnail vira `cover.jpg` ≤ 600×600; exceção no download → `DOWNLOAD_FAILED`; retry com `original.*` existente → `step_count=4`.
 24. Capa: PNG 2000×1000 → `GET /cover` devolve JPEG 600×300; `.gif` → 422 `UNSUPPORTED_FORMAT`; 11 MB → 413; sem capa → 404.
 
@@ -393,6 +393,8 @@ Frontend (`vitest`):
 26. `mix.ts`: ganhos efetivos com mute/solo/master.
 27. Transposição de acordes e tonalidades (`Am` +2 → `Bm`; `B` +1 → `C`; `A minor` −3 → `F# minor`) e exibição (`A minor` em pt-BR → `Lá menor`).
 28. Paridade de chaves `en`/`pt-BR`.
+29. Loop A-B (função pura): `[` depois de B limpa B; B − A = 0,4 s → ignorado; seek fora do trecho com loop ligado → loop desligado.
+30. Restauração de `player_state`: `{}` → padrões do §9.6 com `metronome.volume = metronome_volume`; estado do modo 4 aberto no modo 6 → `guitar`/`piano` com padrão, demais preservados.
 
 Aceite manual (com uma música real): adicionar por upload, URL do YouTube (sem aviso de formato limitado no `worker.log`) e pasta; acompanhar a fila; tocar com 4 e 6 stems; solo do baixo a 70% com +2 semitons; loop A-B sem cortes audíveis; metrônomo alinhado às batidas a 50% e 150%; exportar mix sem voz em MP3.
 

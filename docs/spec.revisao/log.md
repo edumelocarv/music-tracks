@@ -9,6 +9,7 @@ Observação: o usuário pediu explicitamente para não receber mais perguntas; 
 | 3 | v2 | 92 | 5 | 5 | 0 | 0 | 0 |
 | 4 | v3 | 93 | 5 | 5 | 0 | 0 | 0 |
 | 5 | v4 | 95 | 3 | 3 | 0 | 0 | 0 |
+| 6 | v5 | 94 | 5 | 5 | 0 | 0 | 0 |
 
 ## Registro de decisões
 <!-- Isto é o que vai para os revisores. Mantenha curto e neutro. -->
@@ -37,3 +38,7 @@ Nenhuma decisão registrada.
 ## Rodada 5 (v4 → v5)
 **Nota:** 95 — meta atingida. Restavam S1 (média, defeito real de recuperação), S2 (média, testes) e S3 (baixa).
 **Decisão:** como o usuário não quer perguntas e S1 é um defeito real, o orquestrador aplicou S1–S3 e disparou uma rodada final cega (6, limite) para que a versão entregue tenha nota.
+
+## Rodada 6 (v5 → v6) — encerramento por limite de rodadas
+**Nota:** 94 (v5). Trajetória: 86 → 89 → 92 → 93 → 95 → 94.
+**Aplicadas após o encerramento (v6, sem nota cega):** S1 (referência ao api-contract.md), S2 (DELETE × worker), S3, S4 (decisão do orquestrador: seek fora do trecho desliga o loop), S5; polimento P1, P7. Motivo: correções reais necessárias à implementação em andamento; o usuário pediu para não ser consultado.
