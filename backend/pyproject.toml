@@ -1,0 +1,35 @@
+[project]
+name = "music-tracks"
+version = "0.1.0"
+description = "Local stem separation and practice platform"
+requires-python = "==3.12.*"
+dependencies = [
+  "fastapi==0.163.1",
+  "uvicorn[standard]",
+  "python-multipart",
+  "sqlalchemy>=2.0",
+  "demucs==4.1.0",
+  "torch==2.14.1",
+  "beat-this==1.1.0",
+  "essentia==2.1b6.dev1389",
+  "librosa==1.0.1",
+  "numpy>=2",
+  "scipy",
+  "soundfile==0.14.0",
+  "soxr",
+  "yt-dlp[default]",
+  "mutagen",
+  "python-stretch==0.3.1",
+  "pillow",
+]
+
+[dependency-groups]
+dev = ["pytest", "httpx"]
+
+[tool.uv]
+environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: uses real models"]
