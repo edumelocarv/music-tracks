@@ -134,7 +134,7 @@ export function SettingsPage() {
           <ErrorBox error={health.error} />
         ) : (
           <dl className="divide-y divide-line">
-            <Info label={m.settings.device} value={health.data.device === 'mps' ? m.settings.deviceMps : m.settings.deviceCpu} />
+            <Info label={m.settings.device} value={health.data.device === 'mps' ? m.settings.deviceMps : health.data.device === 'cuda' ? m.settings.deviceCuda : m.settings.deviceCpu} />
             <Info
               label={m.settings.models}
               value={

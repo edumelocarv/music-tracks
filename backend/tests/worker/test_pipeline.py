@@ -136,6 +136,59 @@ def test_mps_and_cpu_memory_error_is_out_of_memory(engine, worker, tmp_path, fak
     assert get_song(engine, song_id).status == "failed"
 
 
+class OutOfMemoryError(RuntimeError):
+    """Stands in for torch.cuda.OutOfMemoryError (a RuntimeError subclass of that name)."""
+
+
+def test_cuda_out_of_memory_retries_on_cpu(engine, worker, tmp_path, fake_sep, monkeypatch):
+    from app.worker import separation
+
+    emptied = []
+    monkeypatch.setattr(separation, "empty_device_cache", emptied.append)
+    fake_sep.device = "cuda"
+    fake_sep.failures = {"cuda": OutOfMemoryError("CUDA out of memory. Tried to allocate 2.00 GiB")}
+    song_id, job_id = add_song(engine, write_song_wav(tmp_path / "a.wav", 6))
+    assert worker.run_once() == "done"
+    assert fake_sep.calls == ["cuda", "cpu"]
+    assert emptied == ["cuda"]
+    assert get_song(engine, song_id).status == "ready"
+
+
+def test_cuda_and_cpu_memory_error_is_out_of_memory(engine, worker, tmp_path, fake_sep):
+    fake_sep.device = "cuda"
+    fake_sep.failures = {"cuda": OutOfMemoryError("CUDA out of memory"), "cpu": MemoryError("no mem")}
+    _, job_id = add_song(engine, write_song_wav(tmp_path / "a.wav", 6))
+    assert worker.run_once() == "failed"
+    assert fake_sep.calls == ["cuda", "cpu"]
+    assert get_job(engine, job_id).error_code == "OUT_OF_MEMORY"
+
+
+def test_cuda_non_memory_runtime_error_is_not_retried(engine, worker, tmp_path, fake_sep):
+    fake_sep.device = "cuda"
+    fake_sep.failures = {"cuda": RuntimeError("CUDA error: device-side assert triggered")}
+    _, job_id = add_song(engine, write_song_wav(tmp_path / "a.wav", 6))
+    assert worker.run_once() == "failed"
+    assert fake_sep.calls == ["cuda"]
+    assert get_job(engine, job_id).error_code == "SEPARATION_FAILED"
+
+
+def test_best_torch_device_order(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    from app.devices import best_torch_device
+
+    def fake_torch(cuda: bool, mps: bool):
+        return SimpleNamespace(
+            cuda=SimpleNamespace(is_available=lambda: cuda),
+            backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: mps)),
+        )
+
+    for cuda, mps, expected in ((True, True, "cuda"), (False, True, "mps"), (False, False, "cpu")):
+        monkeypatch.setitem(sys.modules, "torch", fake_torch(cuda, mps))
+        assert best_torch_device() == expected
+
+
 def test_cpu_runtime_error_is_separation_failed_without_retry(engine, worker, tmp_path, fake_sep):
     fake_sep.device = "cpu"
     fake_sep.failures = {"cpu": RuntimeError("weird")}

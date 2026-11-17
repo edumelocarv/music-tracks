@@ -1,0 +1,30 @@
+# Music Tracks with Docker:  docker compose up -d --build   ->  http://127.0.0.1:8765
+# Data (library, models, logs) lives in the named volume; drop audio files into the
+# watch folder with:  docker compose cp song.mp3 music-tracks:/data/inbox/
+services:
+  music-tracks:
+    build: .
+    image: music-tracks:latest
+    init: true                     # reaps child processes, forwards SIGTERM to the launcher
+    stop_grace_period: 30s         # lets a running job go back to the queue cleanly
+    restart: unless-stopped
+    ports:
+      # Published on loopback only: the app has no authentication.
+      - "127.0.0.1:8765:8765"
+    volumes:
+      - music-tracks-data:/data
+    # environment:
+    #   # Publishing another host port (e.g. "127.0.0.1:9000:8765")? Allow its Host header:
+    #   MUSIC_TRACKS_ALLOWED_HOSTS: "localhost:9000,127.0.0.1:9000"
+
+    # NVIDIA GPU (Linux x86_64 host with the NVIDIA Container Toolkit installed):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  music-tracks-data:

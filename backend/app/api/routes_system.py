@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -14,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from .. import config
+from ..audio import find_executable
 from ..config import get_paths
 from ..db import get_setting, set_setting, song_tags, tags
 from ..errors import AppError
@@ -29,13 +29,13 @@ _cache_lock = threading.Lock()
 
 
 def detect_device() -> str:
-    """mps/cpu, computed once (importing torch is slow)."""
+    """cuda/mps/cpu, computed once (importing torch is slow)."""
     with _cache_lock:
         if "device" not in _cache:
             try:
-                import torch
+                from ..devices import best_torch_device
 
-                _cache["device"] = "mps" if torch.backends.mps.is_available() else "cpu"
+                _cache["device"] = best_torch_device()
             except Exception:  # noqa: BLE001
                 log.exception("torch device detection failed")
                 _cache["device"] = "cpu"
@@ -46,7 +46,7 @@ def ffmpeg_version() -> str | None:
     with _cache_lock:
         if "ffmpeg" not in _cache:
             version = None
-            exe = shutil.which("ffmpeg") or ("/opt/homebrew/bin/ffmpeg" if Path("/opt/homebrew/bin/ffmpeg").exists() else None)
+            exe = find_executable("ffmpeg")
             if exe:
                 try:
                     out = subprocess.run([exe, "-version"], capture_output=True, text=True, timeout=10).stdout
@@ -173,9 +173,8 @@ def validate_data_dir(value: Any) -> Path:
     if not isinstance(value, str) or not value.strip():
         raise AppError("VALIDATION_ERROR", "data_dir must be a non-empty string", field="data_dir")
     raw = value.strip()
-    if not (raw.startswith("/") or raw.startswith("~")):
-        raise AppError("VALIDATION_ERROR", "data_dir must be absolute", field="data_dir")
     path = Path(os.path.expanduser(raw))
+    # Path.is_absolute(): "/x" or "~/x" on POSIX; "C:\x" (drive + root) on Windows.
     if not path.is_absolute():
         raise AppError("VALIDATION_ERROR", "data_dir must be absolute", field="data_dir")
     path = Path(os.path.normpath(path))

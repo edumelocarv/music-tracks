@@ -13,6 +13,7 @@ from urllib.parse import quote
 import numpy as np
 import soundfile as sf
 
+from .audio import find_executable
 from .config import SAMPLE_RATE, get_paths
 from .db import new_id
 from .errors import AppError
@@ -65,11 +66,9 @@ def tmp_dir() -> Path:
 
 
 def ffmpeg_bin() -> str:
-    exe = shutil.which("ffmpeg")
+    exe = find_executable("ffmpeg")
     if exe:
         return exe
-    if Path("/opt/homebrew/bin/ffmpeg").exists():
-        return "/opt/homebrew/bin/ffmpeg"
     raise AppError("INTERNAL_ERROR", "ffmpeg not found")
 
 

@@ -122,7 +122,7 @@ function Row(p: {
         </button>
       )}
       <span className="shrink-0 font-mono text-[11px] text-faint tabular-nums">{p.time}</span>
-      <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+      <div className="flex shrink-0 opacity-40 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <IconButton label={m.app.rename} className="h-6 w-6" onClick={() => setEditing(true)}>
           <span className="text-[11px]">✎</span>
         </IconButton>

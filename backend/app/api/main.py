@@ -1,4 +1,7 @@
-"""FastAPI application: `uvicorn app.api.main:app --host 127.0.0.1 --port $MUSIC_TRACKS_PORT`."""
+"""FastAPI application: `uvicorn app.api.main:app --host 127.0.0.1 --port $MUSIC_TRACKS_PORT`.
+
+Normally started by `python -m app.launcher` (binds MUSIC_TRACKS_HOST, default 127.0.0.1).
+"""
 from __future__ import annotations
 
 import json
@@ -86,6 +89,7 @@ class SecurityMiddleware:
         if server and server[1]:
             ports.add(str(server[1]))
         allowed_hosts = {f"{h}:{p}" for h in ("127.0.0.1", "localhost") for p in ports}
+        allowed_hosts |= config.extra_allowed_hosts()
         reason = None
         if host not in allowed_hosts:
             reason = "host not allowed"

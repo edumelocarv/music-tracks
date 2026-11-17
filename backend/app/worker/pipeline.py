@@ -4,7 +4,6 @@ from __future__ import annotations
 import errno
 import json
 import logging
-import os
 import shutil
 import threading
 import time
@@ -15,7 +14,7 @@ import numpy as np
 from sqlalchemy import select, update
 from sqlalchemy.engine import Engine
 
-from .. import audio
+from .. import audio, fsutil
 from ..analysis.beats import BeatDetector
 from ..analysis.peaks import SAMPLES_PER_PEAK, compute_peaks
 from ..analysis.runner import run_analysis
@@ -125,7 +124,7 @@ def _apply_metadata(ctx: JobContext, meta: ExtractedMetadata, work: Path, extra:
                 update(songs).where(songs.c.id == ctx.song_id, songs.c.has_cover == 0).values(has_cover=1)
             )
             if res.rowcount:
-                os.replace(cover_tmp, dest)
+                fsutil.replace(cover_tmp, dest)
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +286,7 @@ def swap_results(ctx: JobContext, work: Path, stem_mode: int, analysis: dict | N
             if cur.exists():
                 old = song_dir / f"{name}.old"
                 _remove(old)
-                os.replace(cur, old)
+                fsutil.replace(cur, old)
                 renamed.append(name)
         for name in SWAP_ITEMS:
             src = work / name
@@ -321,7 +320,7 @@ def swap_results(ctx: JobContext, work: Path, stem_mode: int, analysis: dict | N
             _remove(song_dir / name)
         for name in renamed:
             try:
-                os.replace(song_dir / f"{name}.old", song_dir / name)
+                fsutil.replace(song_dir / f"{name}.old", song_dir / name)
             except OSError:
                 log.exception("job %s: could not restore %s.old", ctx.job_id, name)
         raise
@@ -330,13 +329,8 @@ def swap_results(ctx: JobContext, work: Path, stem_mode: int, analysis: dict | N
 
 
 def _remove(p: Path) -> None:
-    if p.is_dir() and not p.is_symlink():
-        shutil.rmtree(p, ignore_errors=True)
-    else:
-        try:
-            p.unlink()
-        except FileNotFoundError:
-            pass
+    """Best effort (a leftover `.old` is cleaned by recovery on the next start)."""
+    fsutil.remove_path(p)
 
 
 # ---------------------------------------------------------------------------

@@ -44,3 +44,32 @@ def test_unknown_api_route_is_json_404_and_spa_fallback(client):
     r = client.get("/api/nope")
     assert r.status_code == 404 and r.json()["error"]["code"] == "NOT_FOUND"
     assert client.get("/songs/123").status_code == 200
+
+
+def test_extra_allowed_hosts(client, monkeypatch):
+    # e.g. docker run -p 127.0.0.1:9000:8765 -> the browser sends Host: localhost:9000
+    assert client.get("/api/tags", headers={"Host": "localhost:9000"}).status_code == 403
+    monkeypatch.setenv("MUSIC_TRACKS_ALLOWED_HOSTS", " localhost:9000, 127.0.0.1:9000 ,,")
+    assert client.get("/api/tags", headers={"Host": "localhost:9000"}).status_code == 200
+    assert client.get("/api/tags", headers={"Host": "LOCALHOST:9000"}).status_code == 200
+    assert client.get("/api/tags", headers={"Host": "127.0.0.1:9000"}).status_code == 200
+    assert client.get("/api/tags", headers={"Host": "localhost:9001"}).status_code == 403
+    assert client.get("/api/tags", headers={"Host": "evil.example:9000"}).status_code == 403
+    assert client.get("/api/tags").status_code == 200  # the defaults still apply
+    ok = client.put("/api/settings", json={"metronome_volume": 13},
+                    headers={"Host": "localhost:9000", "Origin": "http://localhost:9000"})
+    assert ok.status_code == 200
+    bad = client.put("/api/settings", json={"metronome_volume": 14},
+                     headers={"Host": "localhost:9000", "Origin": "http://127.0.0.1:8765"})
+    assert bad.status_code == 403
+
+
+def test_bind_host_does_not_widen_host_check(client, monkeypatch):
+    from app import config
+
+    assert config.bind_host() == "127.0.0.1"
+    monkeypatch.setenv("MUSIC_TRACKS_HOST", "0.0.0.0")
+    assert config.bind_host() == "0.0.0.0"
+    assert client.get("/api/tags", headers={"Host": "0.0.0.0:8765"}).status_code == 403
+    assert client.get("/api/tags", headers={"Host": "192.168.1.10:8765"}).status_code == 403
+    assert client.get("/api/tags").status_code == 200

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from .. import exporting
+from .. import exporting, fsutil
 from ..errors import AppError
 from ..stems import STEM_MODES
 from .common import check_uuid, engine, log, song_row_or_404
@@ -31,7 +31,8 @@ def _send(path: Path, filename: str, media_type: str) -> FileResponse:
         path,
         media_type=media_type,
         headers={"Content-Disposition": exporting.content_disposition(filename), "Cache-Control": "no-store"},
-        background=BackgroundTask(path.unlink, missing_ok=True),
+        # Runs after the response body was sent and the file closed (required on Windows).
+        background=BackgroundTask(fsutil.remove_path, path),
     )
 
 

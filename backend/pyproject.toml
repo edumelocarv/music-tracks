@@ -11,7 +11,6 @@ dependencies = [
   "demucs==4.1.0",
   "torch==2.14.1",
   "beat-this==1.1.0",
-  "essentia==2.1b6.dev1389",
   "librosa==1.0.1",
   "numpy>=2",
   "scipy",
@@ -23,12 +22,39 @@ dependencies = [
   "pillow",
 ]
 
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# The import package is `app/` next to this file; it is installed in editable mode by
+# `uv sync`, so `uv run --project backend python -m app.launcher` works from the repo root.
+module-name = "app"
+module-root = ""
+
 [dependency-groups]
 dev = ["pytest", "httpx"]
 
 [tool.uv]
-environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
-package = false
+# Supported platforms (Intel macOS is excluded: demucs pins torch<2.3 there).
+environments = [
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sys_platform == 'linux' and platform_machine == 'aarch64'",
+  "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]
+
+# Windows: PyPI's win_amd64 torch wheel is CPU-only, so take torch from the official PyTorch
+# CUDA index there (cu126: the widest GPU/driver support among the CUDA builds of 2.14.1;
+# the wheel bundles the CUDA runtime, ~2 GB, and also runs on machines without a GPU).
+# Linux x86_64 keeps PyPI's torch (already a CUDA build); macOS uses PyPI's (MPS).
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", marker = "sys_platform == 'win32'" }]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

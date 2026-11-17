@@ -12,6 +12,7 @@ from pathlib import Path
 from sqlalchemy import literal_column, select, update
 from sqlalchemy.engine import Engine
 
+from .. import fsutil
 from ..config import ACCEPTED_EXTS, MAX_FILE_BYTES, get_paths
 from ..db import get_setting, jobs, new_id, now_iso, songs
 from ..errors import AppError
@@ -51,7 +52,7 @@ def recover_swaps(engine: Engine) -> None:
             for name in SWAP_ITEMS:
                 _remove(song_dir / name)
             for name in olds:
-                os.replace(song_dir / f"{name}.old", song_dir / name)
+                fsutil.replace(song_dir / f"{name}.old", song_dir / name)
         else:
             log.info("recovery: confirmed swap in %s; deleting .old files", song_dir.name)
             for name in olds:
@@ -228,7 +229,13 @@ class WatchScanner:
         song_dir = get_paths().song_dir(song_id)
         song_dir.mkdir(parents=True, exist_ok=False)
         dest = song_dir / f"original.{ext}"
-        shutil.move(str(path), str(dest))
+        try:
+            shutil.move(str(path), str(dest))
+        except PermissionError:
+            # Windows: still locked by the program copying it in; try again on a later scan.
+            shutil.rmtree(song_dir, ignore_errors=True)
+            log.info("watch: %s is locked; will retry", name)
+            return None
         try:
             create_song_with_job(
                 self.engine, song_id=song_id, title=Path(name).stem, source_type="watch",

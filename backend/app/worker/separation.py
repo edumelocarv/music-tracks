@@ -1,8 +1,8 @@
 """Stem separation with demucs (spec §7.3).
 
-`SeparatorBackend` is the low-level engine (real: demucs; tests: a fake). Device choice,
-the MPS->CPU retry, error classification, stem combination, rescaling and saving live in
-`separate_stems`, so they are exercised with the fake too.
+`SeparatorBackend` is the low-level engine (real: demucs; tests: a fake). Device choice
+(cuda -> mps -> cpu), the accelerator->CPU retry, error classification, stem combination,
+rescaling and saving live in `separate_stems`, so they are exercised with the fake too.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Callable, Protocol
 
 import numpy as np
 
+from ..devices import best_torch_device, empty_device_cache
 from ..errors import AppError, JobCanceled
 from ..stems import MODEL_FOR_MODE, stems_for
 
@@ -27,7 +28,7 @@ PEAK_TARGET = 0.98
 
 class SeparatorBackend(Protocol):
     def default_device(self) -> str:
-        """'mps' or 'cpu'."""
+        """'cuda', 'mps' or 'cpu'."""
         ...
 
     def is_model_cached(self, model: str) -> bool:
@@ -58,11 +59,12 @@ class DemucsBackend:
     def __init__(self) -> None:
         self._model_name: str | None = None
         self._separator = None
+        self._device: str | None = None
 
     def default_device(self) -> str:
-        import torch
-
-        return "mps" if torch.backends.mps.is_available() else "cpu"
+        if self._device is None:
+            self._device = best_torch_device()
+        return self._device
 
     def is_model_cached(self, model: str) -> bool:
         try:
@@ -110,7 +112,7 @@ class DemucsBackend:
         self._separator = None
         self._model_name = None
         gc.collect()
-        _empty_mps_cache()
+        empty_device_cache(self.default_device())
 
     def separate(self, model: str, wav: np.ndarray, device: str, callback: ChunkCallback) -> dict[str, np.ndarray]:
         import torch
@@ -125,37 +127,28 @@ class DemucsBackend:
             return {name: t.detach().cpu().numpy() for name, t in out.items()}
         finally:
             del tensor
-            if device == "mps":
-                _empty_mps_cache()
-
-
-def _empty_mps_cache() -> None:
-    try:
-        import torch
-
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-    except Exception:  # noqa: BLE001
-        pass
+            if device != "cpu":
+                empty_device_cache(device)
 
 
 def is_memory_error(exc: BaseException) -> bool:
     if isinstance(exc, MemoryError):
         return True
-    try:
-        import torch
-
-        oom = getattr(torch, "OutOfMemoryError", None)
-        if oom is not None and isinstance(exc, oom):
-            return True
-    except Exception:  # noqa: BLE001
-        pass
+    # torch.OutOfMemoryError (alias torch.cuda.OutOfMemoryError), matched by name so that
+    # classifying an error never needs to import torch.
+    if any(cls.__name__ == "OutOfMemoryError" for cls in type(exc).__mro__):
+        return True
     msg = str(exc).lower()
     return "out of memory" in msg or "failed to allocate" in msg or "mps backend out of memory" in msg
 
 
-def _is_mps_retryable(exc: BaseException) -> bool:
-    return is_memory_error(exc) or isinstance(exc, RuntimeError)
+def _is_retryable_on_cpu(device: str, exc: BaseException) -> bool:
+    """MPS: memory errors or any MPS runtime error (unsupported op...). CUDA: memory errors only."""
+    if device == "mps":
+        return is_memory_error(exc) or isinstance(exc, RuntimeError)
+    if device == "cuda":
+        return is_memory_error(exc)
+    return False
 
 
 def _passthrough(exc: BaseException) -> bool:
@@ -174,17 +167,18 @@ def run_separator(
     callback: ChunkCallback,
     on_retry: Callable[[], None] = lambda: None,
 ) -> dict[str, np.ndarray]:
-    """Runs on the default device; on MPS memory/runtime errors retries once on CPU."""
+    """Runs on the default device; retries once on CPU after an MPS memory/runtime error or a
+    CUDA out-of-memory error."""
     device = backend.default_device()
     try:
         return backend.separate(model, wav, device, callback)
     except BaseException as exc:  # noqa: BLE001
         if _passthrough(exc):
             raise
-        if device == "mps" and _is_mps_retryable(exc):
-            log.warning("separation on mps failed (%s: %s); retrying on cpu", type(exc).__name__, exc)
+        if _is_retryable_on_cpu(device, exc):
+            log.warning("separation on %s failed (%s: %s); retrying on cpu", device, type(exc).__name__, exc)
             gc.collect()
-            _empty_mps_cache()
+            empty_device_cache(device)
             on_retry()
             try:
                 return backend.separate(model, wav, "cpu", callback)

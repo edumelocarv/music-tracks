@@ -263,6 +263,7 @@ const ptBR: Messages = {
     system: 'Sistema',
     device: 'Dispositivo de separação',
     deviceMps: 'GPU Apple (MPS)',
+    deviceCuda: 'GPU NVIDIA (CUDA)',
     deviceCpu: 'CPU',
     models: 'Modelos baixados',
     modelsYes: 'Sim',

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,6 +11,7 @@ CONFIG_FILE = Path(os.path.expanduser("~/.config/music-tracks/config.json"))
 DEFAULT_DATA_DIR = Path(os.path.expanduser("~/MusicTracks"))
 
 PORT = int(os.environ.get("MUSIC_TRACKS_PORT", "8765"))
+DEFAULT_HOST = "127.0.0.1"
 DEV_ORIGIN = "http://localhost:5173"
 
 SAMPLE_RATE = 44100
@@ -23,6 +25,23 @@ ACCEPTED_EXTS = {
     "mp3", "wav", "flac", "m4a", "aac", "ogg", "opus", "aiff", "aif",
     "wma", "webm", "mp4", "mkv",
 }
+
+
+def bind_host() -> str:
+    """Address the API listens on (MUSIC_TRACKS_HOST; default 127.0.0.1 — local only).
+
+    Containers set 0.0.0.0 so Docker can forward the published port; the Host-header check
+    (spec §12) still only accepts the hosts below.
+    """
+    return os.environ.get("MUSIC_TRACKS_HOST", "").strip() or DEFAULT_HOST
+
+
+def extra_allowed_hosts() -> set[str]:
+    """Extra `host:port` values accepted in the Host header (MUSIC_TRACKS_ALLOWED_HOSTS,
+    comma-separated), e.g. `localhost:9000,127.0.0.1:9000` when Docker publishes the
+    container's port 8765 as 9000 on the host."""
+    raw = os.environ.get("MUSIC_TRACKS_ALLOWED_HOSTS", "")
+    return {h.strip().lower() for h in raw.split(",") if h.strip()}
 
 
 def read_config_file() -> dict:
@@ -114,5 +133,9 @@ def configure_model_env(paths: Paths) -> None:
     os.environ.setdefault("HF_HOME", str(paths.models / "hf"))
     os.environ.setdefault("TORCH_HOME", str(paths.models / "torch"))
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
-    if "/opt/homebrew/bin" not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "")
+    if sys.platform == "darwin":
+        # Homebrew's bin (ffmpeg, node for yt-dlp) may be missing from PATH when started
+        # outside a login shell.
+        path = os.environ.get("PATH", "")
+        if "/opt/homebrew/bin" not in path.split(os.pathsep) and os.path.isdir("/opt/homebrew/bin"):
+            os.environ["PATH"] = "/opt/homebrew/bin" + (os.pathsep + path if path else "")

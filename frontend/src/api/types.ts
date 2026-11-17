@@ -123,7 +123,7 @@ export interface Settings {
 
 export interface Health {
   ok: boolean
-  device: 'mps' | 'cpu'
+  device: 'mps' | 'cuda' | 'cpu'
   ffmpeg: string
   yt_dlp: string
   data_dir: string

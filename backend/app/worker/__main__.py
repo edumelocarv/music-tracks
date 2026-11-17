@@ -21,6 +21,15 @@ def setup_logging(log_dir) -> None:  # noqa: ANN001
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def stop_signals() -> list[signal.Signals]:
+    """SIGINT/SIGTERM everywhere; on Windows also SIGBREAK (what the launcher sends with
+    CTRL_BREAK_EVENT, since SIGTERM cannot be delivered to another process there)."""
+    sigs = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, "SIGBREAK"):
+        sigs.append(signal.SIGBREAK)
+    return sigs
+
+
 def main() -> int:
     from ..config import configure_model_env, get_paths
 
@@ -41,11 +50,11 @@ def main() -> int:
         log.info("received %s; stopping (running job goes back to the queue)", signal.Signals(signum).name)
         deps.stop_event.set()
         # A second signal terminates immediately (recovery handles the rest on next start).
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
-        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        for sig in stop_signals():
+            signal.signal(sig, signal.SIG_DFL)
 
-    signal.signal(signal.SIGINT, on_signal)
-    signal.signal(signal.SIGTERM, on_signal)
+    for sig in stop_signals():
+        signal.signal(sig, on_signal)
 
     log.info("worker starting; data dir %s", paths.root)
     try:

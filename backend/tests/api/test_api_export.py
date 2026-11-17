@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import io
-import shutil
 import subprocess
 import zipfile
 from urllib.parse import quote
@@ -13,6 +12,7 @@ import soundfile as sf
 from api_helpers import make_song
 
 from app import exporting
+from app.audio import ffprobe_bin
 
 EXPECTED_SUBTYPE = {"wav": "PCM_24", "flac": "PCM_24"}
 
@@ -45,7 +45,7 @@ def test_export_stem_formats(client, paths, fmt):
         out = paths.root / "probe.mp3"
         out.write_bytes(r.content)
         probe = subprocess.run(
-            [shutil.which("ffprobe") or "/opt/homebrew/bin/ffprobe", "-v", "error", "-show_entries",
+            [ffprobe_bin(), "-v", "error", "-show_entries",
              "stream=bit_rate", "-of", "csv=p=0", str(out)], capture_output=True, text=True,
         ).stdout.strip()
         assert probe == "320000"

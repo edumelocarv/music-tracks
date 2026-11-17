@@ -262,6 +262,7 @@ const en = {
     system: 'System',
     device: 'Separation device',
     deviceMps: 'Apple GPU (MPS)',
+    deviceCuda: 'NVIDIA GPU (CUDA)',
     deviceCpu: 'CPU',
     models: 'Models downloaded',
     modelsYes: 'Yes',

@@ -4,7 +4,7 @@ Plataforma local para separar músicas em faixas (stems) e praticar com elas.
 
 ## 1. Objetivo e escopo
 
-**Problema.** O usuário quer, no próprio Mac (Apple M4, 16 GB, macOS 26), adicionar músicas, separá-las em faixas e usá-las para praticar instrumento, cantar (karaokê) e estudar arranjos — sem serviços online.
+**Problema.** O usuário quer, no próprio computador (originalmente um Mac Apple M4; o projeto é open source e multiplataforma), adicionar músicas, separá-las em faixas e usá-las para praticar instrumento, cantar (karaokê) e estudar arranjos — sem serviços online.
 
 **Entrega.** Um web app local (backend Python + frontend React servidos em `http://127.0.0.1:8765`) com:
 
@@ -17,7 +17,9 @@ Plataforma local para separar músicas em faixas (stems) e praticar com elas.
 7. Exportação: stem individual, ZIP com todos os stems, mix customizado; em WAV, FLAC ou MP3.
 8. Interface em inglês e português do Brasil, configurável.
 
-**Fora do escopo.** Acesso por outros dispositivos da rede (o servidor escuta só em `127.0.0.1`), autenticação, multiusuário, Docker, app desktop empacotado, letras/transcrição, playlists ordenadas (tags cumprem esse papel), edição de áudio (cortar, aplicar efeitos), pan por stem, sincronização em nuvem, Windows/Linux (pode funcionar, mas não é verificado). **Navegador suportado:** Chrome/Edge atuais; Safari pode funcionar, mas não é verificado.
+**Fora do escopo.** Acesso por outros dispositivos da rede (o servidor escuta só em `127.0.0.1`), autenticação, multiusuário, app desktop empacotado, letras/transcrição, playlists ordenadas (tags cumprem esse papel), edição de áudio (cortar, aplicar efeitos), pan por stem, sincronização em nuvem, GPUs AMD (ROCm), Macs Intel.
+
+**Plataformas.** macOS Apple Silicon, Linux x86_64 e Windows x86_64 (CI roda os testes nos três); Linux arm64 sem garantia; Docker como alternativa. Dispositivo de separação: CUDA → MPS → CPU. **Navegador:** Chrome, Edge, Firefox e Safari atuais (reprodução verificada em Chromium, Firefox e WebKit).
 
 ## 2. Glossário
 
@@ -41,7 +43,7 @@ navegador (React SPA) ──HTTP JSON/arquivos──▶ api (FastAPI, uvicorn, 1
                                      └─ varre a pasta monitorada a cada 5 s
 ```
 
-- **Dois processos Python**, iniciados juntos por `./start.sh`: `api` e `worker`. Comunicação só via SQLite (modo WAL, `busy_timeout=5000`). O worker é separado para que separação pesada (GPU/memória) ou um crash não derrube a API, e para manter modelos carregados entre jobs.
+- **Dois processos Python**, iniciados juntos pelo launcher (`backend/app/launcher.py`, chamado por `start.sh`/`start.cmd`/`start.ps1`): `api` e `worker`. Comunicação só via SQLite (modo WAL, `busy_timeout=5000`). O worker é separado para que separação pesada (GPU/memória) ou um crash não derrube a API, e para manter modelos carregados entre jobs.
 - O frontend compilado (`frontend/dist`) é servido pela própria API em `/`; rotas desconhecidas fora de `/api` devolvem `index.html` (SPA).
 - O frontend acompanha jobs por *polling* de `GET /api/jobs` a cada 1 s enquanto houver job `queued`/`running`, e a cada 10 s caso contrário (para notar itens da pasta monitorada).
 
@@ -55,9 +57,9 @@ Python **3.12** (gerenciado por `uv`; `requires-python = "==3.12.*"`). Versões 
 | Banco | `sqlalchemy` 2.x (SQLite) |
 | Separação | `demucs==4.1.0`, `torch==2.14.1` (MPS) — §7.3 |
 | Batidas/BPM | `beat-this==1.1.0` (CPU) |
-| Tonalidade | `essentia==2.1b6.dev1389` (wheel macOS 15+ arm64, cp312) |
+| Tonalidade | `librosa` (perfis bgate; o essentia foi descartado por não ter wheels para Windows e ser AGPL) |
 | Acordes, chroma | `librosa==1.0.1`, `numpy`, `scipy` |
-| Áudio I/O | `soundfile`, `soxr`; `ffmpeg`/`ffprobe` do sistema (Homebrew) |
+| Áudio I/O | `soundfile`, `soxr`; `ffmpeg`/`ffprobe` do sistema |
 | Download | `yt-dlp[default]` (pacote Python com `yt-dlp-ejs`, não o binário do sistema), sempre com `js_runtimes={"node": {}}` (usa o Node já exigido) para resolver os desafios do YouTube. Atualização: `uv lock --upgrade-package yt-dlp --upgrade-package yt-dlp-ejs && uv sync` |
 | Metadados, capa | `mutagen`, `Pillow` |
 | Time-stretch na exportação | `python-stretch==0.3.1` (Signalsmith Stretch, MIT) |
@@ -65,17 +67,17 @@ Python **3.12** (gerenciado por `uv`; `requires-python = "==3.12.*"`). Versões 
 
 Frontend: Node ≥ 20, **React 19 + TypeScript + Vite**, `@tanstack/react-query`, `react-router`, **Tailwind CSS 4**, `signalsmith-stretch@1.3.2` (versão exata; o pacote não traz tipos — o projeto declara um `.d.ts` próprio). Testes: `vitest`.
 
-Dependências de sistema verificadas por `./start.sh`: `uv`, `node`/`npm`, `ffmpeg`, `ffprobe`. Se faltar alguma, o script imprime o comando `brew install …` correspondente e sai com código 1.
+Dependências de sistema verificadas pelo launcher: `uv`, `node`/`npm`, `ffmpeg`, `ffprobe`. Se faltar alguma, ele imprime o comando de instalação do sistema operacional (`brew`, `apt`, `dnf`, `winget`) e sai com código 1. O `torch` vem do PyPI no macOS e no Linux (build CUDA no x86_64) e do índice CUDA 12.6 do PyTorch no Windows.
 
 ## 4. Execução
 
-- `./start.sh`:
+- `./start.sh` (Windows: `start.cmd` ou `start.ps1`; opções `--port`, `--no-browser`, `--dev`):
   1. Verifica dependências de sistema.
   2. `uv sync` no backend.
   3. Se `frontend/dist` não existir ou algum arquivo em `frontend/src` for mais novo que `frontend/dist/index.html`: `npm ci` (só se `node_modules` faltar) e `npm run build`.
   4. Sobe `worker` e `api` (`uvicorn ... --host 127.0.0.1 --port 8765`), espera `GET /api/health` responder (até 30 s) e abre o navegador (`open http://127.0.0.1:8765`).
   5. `Ctrl+C` encerra os dois processos (trap em `SIGINT`/`SIGTERM`). Se o `worker` morrer, o script registra e o reinicia (até 3 reinícios em 5 min; depois encerra a API e sai com código 1). Se a `api` morrer, encerra o worker e sai com código 1.
-- Porta ocupada: o script detecta (`lsof -i :8765`), informa e sai com código 1. Porta configurável por `MUSIC_TRACKS_PORT`.
+- Porta ocupada: o launcher detecta (tentando abrir a porta), informa e sai com código 1. Porta configurável por `MUSIC_TRACKS_PORT`.
 - `./dev.sh` (exporta `MUSIC_TRACKS_DEV=1`): worker (sem reload) + API com `--reload` + `vite` dev server (porta 5173) com proxy `/api` → 8765 (`changeOrigin: true`, para passar na checagem de `Host` do §12).
 
 ## 5. Interface
@@ -220,7 +222,7 @@ Entradas (sempre convertidas para mono):
 | Saída | Entrada | Método |
 |---|---|---|
 | Batidas, downbeats, BPM | `source.wav` (mix completo) | `beat_this` `File2Beats(checkpoint_path="final0", device="cpu", dbn=False)`. BPM = `60 / mediana(diff(beats))`, arredondado a 0,1. Menos de 8 batidas → `bpm=null`, listas vazias. |
-| Tonalidade | soma de todos os stems exceto `drums` (modo 2: `vocals`+`instrumental`) | `essentia.standard.KeyExtractor(profileType="bgate")` → `key`, `scale`, `strength`. Rótulo `"<key> <scale>"` (ex.: `A minor`); bemóis normalizados para sustenidos. |
+| Tonalidade | soma de todos os stems exceto `drums` (modo 2: `vocals`+`instrumental`) | `chroma_cqt` (22,05 kHz, hop 4096, 36 bins/oitava), raiz quadrada por bin, soma no tempo, correlação com os 24 perfis bgate maior/menor rotacionados → `key`, `scale`, `confidence` (correlação limitada a 0–1). Rótulo `"<key> <scale>"` (ex.: `A minor`); bemóis normalizados para sustenidos. |
 | Acordes | soma de `bass`+`other`(+`guitar`+`piano`); modo 2: `instrumental` | Matcher próprio (abaixo). |
 
 **Matcher de acordes** (`backend/app/analysis/chords.py`):
@@ -353,14 +355,14 @@ Prefixo `/api`; JSON; erros no formato e com os status do §8.3. Os formatos exa
 
 ## 12. Requisitos não funcionais
 
-- **Segurança:** servidor só em `127.0.0.1`. A API responde 403 `FORBIDDEN` se o `Host` não for `127.0.0.1:<porta>` ou `localhost:<porta>` (DNS rebinding), e a requisições mutáveis cujo `Origin`, quando presente, não seja a própria origem (com `MUSIC_TRACKS_DEV=1`, também `http://localhost:5173` e `http://127.0.0.1:5173`); CORS não é habilitado. Todo `{id}`/`{stem}` é validado (UUID; stem do modo atual) antes de montar caminhos — nenhum caminho vem do cliente. URLs: apenas `http`/`https`.
+- **Segurança:** servidor só em `127.0.0.1` (`MUSIC_TRACKS_HOST` muda o endereço de escuta, usado pelo Docker; `MUSIC_TRACKS_ALLOWED_HOSTS` acrescenta valores `host:porta` aceitos na checagem de `Host`). A API responde 403 `FORBIDDEN` se o `Host` não for `127.0.0.1:<porta>` ou `localhost:<porta>` (DNS rebinding), e a requisições mutáveis cujo `Origin`, quando presente, não seja a própria origem (com `MUSIC_TRACKS_DEV=1`, também `http://localhost:5173` e `http://127.0.0.1:5173`); CORS não é habilitado. Todo `{id}`/`{stem}` é validado (UUID; stem do modo atual) antes de montar caminhos — nenhum caminho vem do cliente. URLs: apenas `http`/`https`.
 - **Desempenho (referência, M4):** separação de 4 min em qualidade máxima conforme §7.3; análise < 15 s; abrir uma música de 4 min com 4 stems e começar a tocar < 5 s; listagem de 500 músicas < 300 ms.
 - **Logs:** `DATA_DIR/logs/api.log` e `worker.log` (rotação 5 × 5 MB), com início/fim de cada etapa, duração e erros com stack trace.
 - **Robustez:** crash do worker não corrompe biblioteca (troca atômica §7.2; recuperação §7.1).
 
 ## 13. Testes e critérios de aceite
 
-Backend (`pytest`). Fora de `@pytest.mark.slow`, o separador é um *fake* (gera stems com filtros simples) e o detector de batidas também (batidas a cada 0,5 s a partir de 0); `essentia` e o matcher rodam reais. A suíte rápida roda offline.
+Backend (`pytest`). Fora de `@pytest.mark.slow`, o separador é um *fake* (gera stems com filtros simples) e o detector de batidas também (batidas a cada 0,5 s a partir de 0); a detecção de tom e o matcher rodam reais. A suíte rápida roda offline.
 
 1. Upload válido cria música `pending` + job `queued`; formatos/tamanhos inválidos retornam o código correto e não criam nada.
 2. Duplicidade por hash (upload) e por `extractor:id` (URL, com yt-dlp mockado) → 409 `DUPLICATE` com `existing_song_id`.

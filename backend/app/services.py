@@ -1,13 +1,13 @@
 """Shared domain operations used by both the API and the worker (spec §7.1, §8)."""
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from sqlalchemy import insert, select, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 
+from . import fsutil
 from .config import get_paths
 from .db import ACTIVE_JOB_STATUSES, jobs, new_id, now_iso, songs
 from .errors import AppError
@@ -124,7 +124,7 @@ def find_by_source_key(engine, source_key: str) -> str | None:  # noqa: ANN001
 
 
 def cleanup_song_dir(song_id: str) -> None:
-    shutil.rmtree(get_paths().song_dir(song_id), ignore_errors=True)
+    fsutil.remove_path(get_paths().song_dir(song_id))
 
 
 def original_path(song_id: str) -> Path | None:

@@ -125,7 +125,9 @@ export function drawChords(
     ctx.fillRect(x0 + 0.5, 3, Math.max(0, x1 - x0 - 1), height - 6)
     const label = displayChord(c.label, semitones)
     const w = x1 - x0
-    if (w > 18) {
+    // Only draw labels that fit entirely (a clipped "Dm" reads as "Dn"); zooming in reveals the rest.
+    const visibleW = Math.min(x1, width) - Math.max(x0, 0)
+    if (visibleW >= ctx.measureText(label).width + 8) {
       ctx.save()
       ctx.beginPath()
       ctx.rect(x0, 0, w, height)

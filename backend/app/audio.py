@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -18,7 +19,9 @@ import numpy as np
 import soundfile as sf
 
 SAMPLE_RATE = 44100
-_HOMEBREW_BIN = "/opt/homebrew/bin"
+# Homebrew prefixes, checked on macOS when the binary is not on PATH (e.g. app started from
+# a GUI/launchd environment with a minimal PATH).
+_MACOS_EXTRA_BIN_DIRS = ("/opt/homebrew/bin", "/usr/local/bin")
 
 
 class AudioError(Exception):
@@ -29,22 +32,25 @@ class AudioError(Exception):
         self.no_space = no_space
 
 
-def _which(name: str) -> str:
+def find_executable(name: str) -> str | None:
+    """Full path of `name` (PATH lookup via shutil.which, so `.exe` works on Windows), or None."""
     found = shutil.which(name)
     if found:
         return found
-    candidate = os.path.join(_HOMEBREW_BIN, name)
-    if os.path.exists(candidate):
-        return candidate
-    return name
+    if sys.platform == "darwin":
+        for d in _MACOS_EXTRA_BIN_DIRS:
+            candidate = os.path.join(d, name)
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return None
 
 
 def ffmpeg_bin() -> str:
-    return _which("ffmpeg")
+    return find_executable("ffmpeg") or "ffmpeg"
 
 
 def ffprobe_bin() -> str:
-    return _which("ffprobe")
+    return find_executable("ffprobe") or "ffprobe"
 
 
 def ffmpeg_version() -> str | None:

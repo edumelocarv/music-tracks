@@ -1,0 +1,13 @@
+.git
+.github
+.claude
+**/.DS_Store
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
+**/node_modules
+frontend/dist
+backend/tests
+docs
+*.log

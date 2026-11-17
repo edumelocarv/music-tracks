@@ -13,7 +13,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel
 from sqlalchemy import delete, insert, select, update
 
-from .. import services
+from .. import fsutil, services
 from ..config import MAX_COVER_BYTES
 from ..db import ACTIVE_JOB_STATUSES, jobs, now_iso, song_tags, songs, tags
 from ..errors import AppError
@@ -290,7 +290,7 @@ def save_cover_image(data: bytes, dest) -> None:  # noqa: ANN001
         raise AppError("UNSUPPORTED_FORMAT", f"invalid image: {exc}") from None
     tmp = dest.with_name(dest.name + ".tmp")
     img.save(tmp, "JPEG", quality=90)
-    os.replace(tmp, dest)
+    fsutil.replace(tmp, dest)
 
 
 @router.put("/songs/{song_id}/cover")
@@ -321,7 +321,7 @@ def delete_cover(song_id: str):
     sid = check_uuid(song_id)
     with engine().begin() as conn:
         song_row_or_404(conn, sid)
-        (song_dir(sid) / "cover.jpg").unlink(missing_ok=True)
+        fsutil.remove_path(song_dir(sid) / "cover.jpg")
         conn.execute(update(songs).where(songs.c.id == sid).values(has_cover=0, updated_at=now_iso()))
         return song_dict(conn, sid)
 

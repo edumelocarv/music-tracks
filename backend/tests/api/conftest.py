@@ -20,7 +20,7 @@ from app.config import Paths  # noqa: E402
 
 @pytest.fixture
 def paths(tmp_path, monkeypatch):
-    for var in ("MUSIC_TRACKS_HOME", "MUSIC_TRACKS_DEV", "MUSIC_TRACKS_PORT"):
+    for var in ("MUSIC_TRACKS_HOME", "MUSIC_TRACKS_DEV", "MUSIC_TRACKS_PORT", "MUSIC_TRACKS_HOST", "MUSIC_TRACKS_ALLOWED_HOSTS"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "config" / "config.json")
     monkeypatch.setattr(config, "DEFAULT_DATA_DIR", tmp_path / "default-data")
