@@ -135,7 +135,10 @@ export class StemEngine {
       // One call with all 2N channels; the buffers are transferred (no copy).
       await node.addBuffers(views, views.map((c) => c.buffer))
       const latency = await node.latency()
-      const engine = new StemEngine(ctx, node, n, maxLen / SAMPLE_RATE, latency)
+      // Never exceed the server's duration_s: loop ends / export ranges are validated against it.
+      const decoded = maxLen / SAMPLE_RATE
+      const duration = opts.durationHint && opts.durationHint > 0 ? Math.min(decoded, opts.durationHint) : decoded
+      const engine = new StemEngine(ctx, node, n, duration, latency)
       engine.applyState({}, 0)
       return engine
     } catch (err) {

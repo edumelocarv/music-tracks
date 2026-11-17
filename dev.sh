@@ -20,5 +20,10 @@ trap 'cleanup; exit 0' INT TERM
 (cd "$ROOT/frontend" && exec npm run dev -- --host 127.0.0.1 --port 5173) & pids+=($!)
 
 echo "Dev: http://localhost:5173 (API em http://127.0.0.1:$PORT)"
-wait -n
-cleanup
+# Portable "wait for any child to exit" (macOS /bin/bash 3.2 has no `wait -n`).
+while true; do
+  for pid in "${pids[@]}"; do
+    kill -0 "$pid" 2>/dev/null || { cleanup; exit 1; }
+  done
+  sleep 1
+done

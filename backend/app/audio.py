@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -131,8 +132,11 @@ def convert_to_wav(
         "-c:a", "pcm_f32le", "-f", "wav", str(dst),
         "-progress", "pipe:1", "-nostats",
     ]
+    # stderr goes to a temp file: a pipe could fill up (>64 KB of decode errors on a
+    # damaged file) and block ffmpeg while we only read stdout.
+    err_file = tempfile.TemporaryFile(mode="w+b")
     proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
+        cmd, stdout=subprocess.PIPE, stderr=err_file, text=True, bufsize=1
     )
     try:
         assert proc.stdout is not None
@@ -154,9 +158,12 @@ def convert_to_wav(
         proc.kill()
         proc.wait()
         raise
-    stderr = proc.stderr.read() if proc.stderr else ""
-    if proc.stderr:
-        proc.stderr.close()
+    finally:
+        err_file.seek(0, 2)
+        size = err_file.tell()
+        err_file.seek(max(0, size - 4000))
+        stderr = err_file.read().decode("utf-8", "replace")
+        err_file.close()
     if proc.returncode != 0:
         msg = stderr.strip()[:500] or f"ffmpeg exited with {proc.returncode}"
         raise AudioError(f"ffmpeg conversion failed: {msg}", no_space="No space left" in stderr)

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { cancelJob, deleteCover, deleteSong, getSong, patchSong, reprocessSong, retryJob, uploadCover, type SongPatch } from '../api/endpoints'
+import { cancelJob, deleteCover, deleteSong, getSong, patchSong, patchSongKeepalive, reprocessSong, retryJob, uploadCover, type SongPatch } from '../api/endpoints'
 import { qk, useActiveJobForSong, useSettings, useTags } from '../api/queries'
 import type { Job, Song, StemMode } from '../api/types'
 import { ExportDialog } from '../components/ExportDialog'
@@ -88,7 +88,7 @@ export function SongPage() {
           />
         ))}
 
-      <NotesCard song={s} />
+      <NotesCard key={s.id} song={s} />
 
       {dialog === 'reprocess' && <ReprocessDialog song={s} onClose={() => setDialog(null)} />}
       {dialog === 'delete' && <DeleteDialog song={s} onClose={() => setDialog(null)} />}
@@ -322,6 +322,26 @@ function NotesCard({ song }: { song: Song }) {
   const [error, setError] = useState<unknown>(null)
   const lastSaved = useRef(song.notes)
   const dirty = useRef(false)
+  const latest = useRef(text)
+  latest.current = text
+
+  // Flush an unsaved edit when leaving the page (unmount) or closing the tab.
+  useEffect(() => {
+    const songId = song.id
+    const flush = () => {
+      if (latest.current !== lastSaved.current) {
+        const value = latest.current
+        patchSongKeepalive(songId, { notes: value })
+        lastSaved.current = value
+        qc.setQueryData<Song>(qk.song(songId), (old) => (old ? { ...old, notes: value } : old))
+      }
+    }
+    window.addEventListener('beforeunload', flush)
+    return () => {
+      window.removeEventListener('beforeunload', flush)
+      flush()
+    }
+  }, [song.id, qc])
 
   useEffect(() => {
     if (!dirty.current) {
